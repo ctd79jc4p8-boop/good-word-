@@ -116,7 +116,7 @@
     2. 21~41번 지문에서 고등학생이 문맥을 파악하기 위해 꼭 알아야 하는 핵심/난이도 높은 단어를 추출하고, **사전적 의미가 아닌 해당 지문 문맥에 맞는 정확한 뜻**을 제공하세요.
     3. 분석이 끝난 후, 맨 마지막에는 철자/형태가 비슷해서 헷갈리기 쉬운 단어쌍이나 자주 활용되는 파생어/핵심 어휘 묶음을 별도로 정리해 주세요.
 
-    반드시 응답은 아래 형태의 순수한 JSON 구조로만 출력하세요. 다른 설명이나 마크다운 표현(예: \`\`\`json)은 포함하지 마세요.
+    반드시 응답은 아래 형태의 순수한 JSON 구조로만 출력하세요. 다른 설명이나 마크다운 표현은 절대 포함하지 마세요.
 
     {
       "contextWords": [
@@ -138,33 +138,46 @@
     ${text.substring(0, 50000)}
     `;
 
-    const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-    
-    let response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }]
-      })
-    });
+    // 지원 가능한 여러 버전의 API 주소 후보군
+    const apiEndpoints = [
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-002:generateContent?key=${apiKey}`
+    ];
 
-    if (!response.ok) {
-      const fallbackUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
-      response = await fetch(fallbackUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }]
-        })
-      });
+    let lastError = null;
+    let resData = null;
+
+    for (const url of apiEndpoints) {
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }]
+          })
+        });
+
+        if (response.ok) {
+          resData = await response.json();
+          break; // 성공 시 반복문 종료
+        } else {
+          const errBody = await response.json();
+          lastError = errBody.error?.message || 'API 호출 실패';
+        }
+      } catch (err) {
+        lastError = err.message;
+      }
     }
 
-    const resData = await response.json();
-    if (!response.ok) throw new Error(resData.error?.message || 'API 호출 실패');
+    if (!resData) {
+      throw new Error(lastError || '모든 API 엔드포인트 호출에 실패했습니다. API Key를 확인해 주세요.');
+    }
 
     let rawText = resData.candidates[0].content.parts[0].text;
     
-    // JSON 응답 정화 로직
+    // JSON 응답 깔끔하게 처리
     rawText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
     const jsonMatch = rawText.match(/\{[\s\S]*\}/);
     return JSON.parse(jsonMatch ? jsonMatch[0] : rawText);
