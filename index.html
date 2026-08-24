@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>모의고사 AI 단어장 (21~41번)</title>
+  
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="AI단어장">
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+  
+  <style>
+    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background-color: #f5f5f7; margin: 0; padding: 20px; color: #1d1d1f; }
+    .container { max-width: 650px; margin: 0 auto; background: white; padding: 24px; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
+    h1 { font-size: 1.5rem; text-align: center; margin-bottom: 20px; color: #0071e3; }
+    
+    .input-group { margin-bottom: 16px; }
+    label { font-weight: 600; font-size: 0.9rem; display: block; margin-bottom: 6px; }
+    input[type="text"], input[type="file"] { width: 100%; padding: 12px; border: 1px solid #d2d2d7; border-radius: 10px; font-size: 0.95rem; }
+    
+    button { width: 100%; padding: 14px; background: #0071e3; color: white; border: none; border-radius: 10px; font-weight: 600; font-size: 1rem; cursor: pointer; transition: 0.2s; }
+    button:disabled { background: #86868b; cursor: not-allowed; }
+    
+    .loading { display: none; text-align: center; margin: 20px 0; color: #86868b; line-height: 1.5; }
+    
+    .result-section { margin-top: 24px; }
+    .section-title { font-size: 1.2rem; font-weight: 700; margin-bottom: 12px; border-bottom: 2px solid #0071e3; padding-bottom: 6px; color: #0071e3; }
+    
+    .word-card { background: #fbfbfd; border: 1px solid #e5e5ea; border-radius: 12px; padding: 16px; margin-bottom: 12px; }
+    .word-title { font-size: 1.1rem; font-weight: 700; color: #1d1d1f; }
+    .word-meaning { font-size: 0.95rem; color: #0071e3; margin: 4px 0 8px 0; font-weight: 600; }
+    .word-context { font-size: 0.88rem; color: #6e6e73; background: #f2f2f7; padding: 8px; border-radius: 6px; }
+    
+    .confusing-card { background: #fff9e6; border: 1px solid #ffe0b2; border-radius: 12px; padding: 14px; margin-bottom: 10px; }
+    .confusing-pair { font-weight: 700; color: #d97706; font-size: 1rem; }
+    .confusing-desc { font-size: 0.88rem; color: #4b5563; margin-top: 4px; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h1>📖 모의고사 21~41번 AI 단어 분석</h1>
+  
+  <div class="input-group">
+    <label for="apiKey">Gemini API Key</label>
+    <input type="text" id="apiKey" placeholder="Gemini API Key 입력">
+  </div>
+
+  <div class="input-group">
+    <label for="pdfFile">전체 모의고사 PDF 업로드</label>
+    <input type="file" id="pdfFile" accept="application/pdf">
+  </div>
+
+  <button id="analyzeBtn" onclick="processPDF()">21~41번 단어 분석 시작</button>
+
+  <div class="loading" id="loadingText">
+    ⏳ PDF 전체 텍스트 추출 중...<br>
+    (21번~41번 영역 감지 및 문맥/유사어 분석에는 약 10~20초가 소요됩니다)
+  </div>
+
+  <div class="result-section" id="resultContainer"></div>
+</div>
+
+<script>
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+
+  async function processPDF() {
+    const apiKey = document.getElementById('apiKey').value.trim();
+    const fileInput = document.getElementById('pdfFile');
+    const loadingText = document.getElementById('loadingText');
+    const resultContainer = document.getElementById('resultContainer');
+
+    if (!apiKey) { alert('Gemini API Key를 입력해 주세요.'); return; }
+    if (!fileInput.files[0]) { alert('PDF 파일을 선택해 주세요.'); return; }
+
+    loadingText.style.display = 'block';
+    resultContainer.innerHTML = '';
+    document.getElementById('analyzeBtn').disabled = true;
+
+    try {
+      // 1. PDF 전체 텍스트 추출
+      const file = fileInput.files[0];
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      
+      let fullText = '';
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        const pageText = textContent.items.map(item => item.str).join(' ');
+        fullText += pageText + '\n';
+      }
+
+      // 2. Gemini API 호출
+      const data = await analyzeTextWithGemini(fullText, apiKey);
+      
+      // 3. 결과 출력
+      renderResults(data);
+    } catch (error) {
+      alert('오류가 발생했습니다: ' + error.message);
+    } finally {
+      loadingText.style.display = 'none';
+      document.getElementById('analyzeBtn').disabled = false;
+    }
+  }
+
+  async function analyzeTextWithGemini(text, apiKey) {
+    const prompt = `
+    다음은 영어 모의고사 시험지 전체의 텍스트입니다.
+    
+    [요청 사항]
+    1. 전체 텍스트 중 **21번 문제 영역부터 41번 문제 영역 사이의 지문**만 집중적으로 분석하세요. (1~20번 듣기 및 42번 이후는 제외)
+    2. 21~41번 지문에서 고등학생이 문맥을 파악하기 위해 꼭 알아야 하는 핵심/난이도 높은 단어를 추출하고, **사전적 의미가 아닌 해당 지문 문맥에 맞는 정확한 뜻**을 제공하세요.
+    3. 분석이 끝난 후, 맨 마지막에는 철자/철양상이 비슷해서 헷갈리기 쉬운 단어쌍(예: adapt vs adopt, complement vs compliment)이나 자주 활용되는 파생어/핵심 어휘 묶음을 별도로 정리해 주세요.
+
+    반드시 응답은 아래 형태의 JSON 구조로만 출력하세요. 다른 프롬프트 설명이나 마크다운 표현은 제거하세요.
+
+    {
+      "contextWords": [
+        {
+          "word": "단어",
+          "meaning": "지문 문맥 맞춤 한국어 뜻",
+          "context": "단어가 쓰인 지문의 핵심 맥락 설명 또는 해당 문장"
+        }
+      ],
+      "confusingWords": [
+        {
+          "pair": "단어A vs 단어B (또는 헷갈리는 어휘군)",
+          "description": "두 단어의 구별점 및 각각의 뜻/활용 팁"
+        }
+      ]
+    }
+
+    모의고사 전체 텍스트:
+    ${text.substring(0, 12000)}
+    `;
+
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }]
+      })
+    });
+
+    const resData = await response.json();
+    if (!response.ok) throw new Error(resData.error?.message || 'API 호출 실패');
+
+    const rawText = resData.candidates[0].content.parts[0].text;
+    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+    return JSON.parse(jsonMatch ? jsonMatch[0] : rawText);
+  }
+
+  function renderResults(data) {
+    const container = document.getElementById('resultContainer');
+    
+    // 1. 문맥 맞춤 단어 파트
+    let html = '<div class="section-title">📌 21~41번 지문 문맥 맞춤 어휘</div>';
+    if (data.contextWords && data.contextWords.length > 0) {
+      data.contextWords.forEach(item => {
+        html += `
+          <div class="word-card">
+            <div class="word-title">${item.word}</div>
+            <div class="word-meaning">${item.meaning}</div>
+            <div class="word-context">💡 문맥: ${item.context}</div>
+          </div>
+        `;
+      });
+    }
+
+    // 2. 혼동/다빈도 어휘 파트
+    html += '<div class="section-title" style="margin-top: 32px; color: #d97706; border-color: #d97706;">⚠️ 혼동하기 쉬운 철자 & 빈출 어휘 묶음</div>';
+    if (data.confusingWords && data.confusingWords.length > 0) {
+      data.confusingWords.forEach(item => {
+        html += `
+          <div class="confusing-card">
+            <div class="confusing-pair">${item.pair}</div>
+            <div class="confusing-desc">${item.description}</div>
+          </div>
+        `;
+      });
+    }
+
+    container.innerHTML = html;
+  }
+</script>
+
+</body>
+</html>
