@@ -81,7 +81,6 @@
     document.getElementById('analyzeBtn').disabled = true;
 
     try {
-      // 1. PDF 전체 텍스트 추출
       const file = fileInput.files[0];
       const arrayBuffer = await file.arrayBuffer();
       const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
@@ -94,10 +93,11 @@
         fullText += pageText + '\n';
       }
 
-      // 2. Gemini API 호출
+      if (!fullText.trim()) {
+        throw new Error("PDF에서 텍스트를 추출하지 못했습니다. 스캔본이 아닌 원본 PDF 파일인지 확인해 주세요.");
+      }
+
       const data = await analyzeTextWithGemini(fullText, apiKey);
-      
-      // 3. 결과 출력
       renderResults(data);
     } catch (error) {
       alert('오류가 발생했습니다: ' + error.message);
@@ -114,9 +114,9 @@
     [요청 사항]
     1. 전체 텍스트 중 **21번 문제 영역부터 41번 문제 영역 사이의 지문**만 집중적으로 분석하세요. (1~20번 듣기 및 42번 이후는 제외)
     2. 21~41번 지문에서 고등학생이 문맥을 파악하기 위해 꼭 알아야 하는 핵심/난이도 높은 단어를 추출하고, **사전적 의미가 아닌 해당 지문 문맥에 맞는 정확한 뜻**을 제공하세요.
-    3. 분석이 끝난 후, 맨 마지막에는 철자/철양상이 비슷해서 헷갈리기 쉬운 단어쌍(예: adapt vs adopt, complement vs compliment)이나 자주 활용되는 파생어/핵심 어휘 묶음을 별도로 정리해 주세요.
+    3. 분석이 끝난 후, 맨 마지막에는 철자/형태가 비슷해서 헷갈리기 쉬운 단어쌍이나 자주 활용되는 파생어/핵심 어휘 묶음을 별도로 정리해 주세요.
 
-    반드시 응답은 아래 형태의 JSON 구조로만 출력하세요. 다른 프롬프트 설명이나 마크다운 표현은 제거하세요.
+    반드시 응답은 아래 형태의 순수한 JSON 구조로만 출력하세요. 다른 설명이나 마크다운 표현(예: \`\`\`json)은 포함하지 마세요.
 
     {
       "contextWords": [
@@ -135,14 +135,12 @@
     }
 
     모의고사 전체 텍스트:
-    ${text.substring(0, 12000)}
+    ${text.substring(0, 50000)}
     `;
 
+    const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
     
-const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-
-    
-    const response = await fetch(url, {
+    let response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -150,10 +148,24 @@ const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-
       })
     });
 
+    if (!response.ok) {
+      const fallbackUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
+      response = await fetch(fallbackUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }]
+        })
+      });
+    }
+
     const resData = await response.json();
     if (!response.ok) throw new Error(resData.error?.message || 'API 호출 실패');
 
-    const rawText = resData.candidates[0].content.parts[0].text;
+    let rawText = resData.candidates[0].content.parts[0].text;
+    
+    // JSON 응답 정화 로직
+    rawText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
     const jsonMatch = rawText.match(/\{[\s\S]*\}/);
     return JSON.parse(jsonMatch ? jsonMatch[0] : rawText);
   }
@@ -161,7 +173,6 @@ const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-
   function renderResults(data) {
     const container = document.getElementById('resultContainer');
     
-    // 1. 문맥 맞춤 단어 파트
     let html = '<div class="section-title">📌 21~41번 지문 문맥 맞춤 어휘</div>';
     if (data.contextWords && data.contextWords.length > 0) {
       data.contextWords.forEach(item => {
@@ -175,7 +186,6 @@ const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-
       });
     }
 
-    // 2. 혼동/다빈도 어휘 파트
     html += '<div class="section-title" style="margin-top: 32px; color: #d97706; border-color: #d97706;">⚠️ 혼동하기 쉬운 철자 & 빈출 어휘 묶음</div>';
     if (data.confusingWords && data.confusingWords.length > 0) {
       data.confusingWords.forEach(item => {
