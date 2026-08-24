@@ -19,10 +19,12 @@
     
     .input-group { margin-bottom: 16px; }
     label { font-weight: 600; font-size: 0.9rem; display: block; margin-bottom: 6px; }
+    .key-wrapper { display: flex; gap: 8px; }
     input[type="text"], input[type="file"] { width: 100%; padding: 12px; border: 1px solid #d2d2d7; border-radius: 10px; font-size: 0.95rem; }
+    .btn-clear { width: 80px; background: #e5e5ea; color: #1d1d1f; border: none; border-radius: 10px; font-size: 0.85rem; font-weight: 600; cursor: pointer; }
     
-    button { width: 100%; padding: 14px; background: #0071e3; color: white; border: none; border-radius: 10px; font-weight: 600; font-size: 1rem; cursor: pointer; transition: 0.2s; }
-    button:disabled { background: #86868b; cursor: not-allowed; }
+    button.main-btn { width: 100%; padding: 14px; background: #0071e3; color: white; border: none; border-radius: 10px; font-weight: 600; font-size: 1rem; cursor: pointer; transition: 0.2s; }
+    button.main-btn:disabled { background: #86868b; cursor: not-allowed; }
     
     .loading { display: none; text-align: center; margin: 20px 0; color: #86868b; line-height: 1.5; }
     
@@ -45,8 +47,11 @@
   <h1>📖 모의고사 21~41번 AI 단어 분석</h1>
   
   <div class="input-group">
-    <label for="apiKey">Gemini API Key</label>
-    <input type="text" id="apiKey" placeholder="Gemini API Key 입력">
+    <label for="apiKey">Gemini API Key (자동 저장됨)</label>
+    <div class="key-wrapper">
+      <input type="text" id="apiKey" placeholder="Gemini API Key 입력">
+      <button class="btn-clear" onclick="clearApiKey()">삭제</button>
+    </div>
   </div>
 
   <div class="input-group">
@@ -54,7 +59,7 @@
     <input type="file" id="pdfFile" accept="application/pdf">
   </div>
 
-  <button id="analyzeBtn" onclick="processPDF()">21~41번 단어 분석 시작</button>
+  <button class="main-btn" id="analyzeBtn" onclick="processPDF()">21~41번 단어 분석 시작</button>
 
   <div class="loading" id="loadingText">
     ⏳ PDF 전체 텍스트 추출 중...<br>
@@ -67,6 +72,19 @@
 <script>
   pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
+  window.addEventListener('DOMContentLoaded', () => {
+    const savedKey = localStorage.getItem('gemini_api_key');
+    if (savedKey) {
+      document.getElementById('apiKey').value = savedKey;
+    }
+  });
+
+  function clearApiKey() {
+    localStorage.removeItem('gemini_api_key');
+    document.getElementById('apiKey').value = '';
+    alert('저장된 API Key가 삭제되었습니다.');
+  }
+
   async function processPDF() {
     const apiKey = document.getElementById('apiKey').value.trim();
     const fileInput = document.getElementById('pdfFile');
@@ -75,6 +93,8 @@
 
     if (!apiKey) { alert('Gemini API Key를 입력해 주세요.'); return; }
     if (!fileInput.files[0]) { alert('PDF 파일을 선택해 주세요.'); return; }
+
+    localStorage.setItem('gemini_api_key', apiKey);
 
     loadingText.style.display = 'block';
     resultContainer.innerHTML = '';
@@ -138,12 +158,12 @@
     ${text.substring(0, 50000)}
     `;
 
-    // 지원 가능한 여러 버전의 API 주소 후보군
+    // 최신 표준 모델 엔드포인트 세트
     const apiEndpoints = [
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
-      `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-002:generateContent?key=${apiKey}`
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`
     ];
 
     let lastError = null;
@@ -161,7 +181,7 @@
 
         if (response.ok) {
           resData = await response.json();
-          break; // 성공 시 반복문 종료
+          break;
         } else {
           const errBody = await response.json();
           lastError = errBody.error?.message || 'API 호출 실패';
@@ -172,12 +192,11 @@
     }
 
     if (!resData) {
-      throw new Error(lastError || '모든 API 엔드포인트 호출에 실패했습니다. API Key를 확인해 주세요.');
+      throw new Error(lastError || 'API 호출에 실패했습니다. API Key 권한이나 키 문자열을 확인해 주세요.');
     }
 
     let rawText = resData.candidates[0].content.parts[0].text;
     
-    // JSON 응답 깔끔하게 처리
     rawText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
     const jsonMatch = rawText.match(/\{[\s\S]*\}/);
     return JSON.parse(jsonMatch ? jsonMatch[0] : rawText);
